@@ -6,13 +6,15 @@ import numpy as np
 from tqdm import tqdm
 
 import constant, conf
+from utils import TrainValidTestSplit
 
 
 class Featuring(object):
-    def __init__(self, action_df, user_df, item_df):
+    def __init__(self, action_df, user_df, item_df, train_valid_split=False):
         self.action = action_df
         self.user = user_df
         self.item = item_df
+        self.train_valid_split = train_valid_split
         self.total = \
             self.action.merge(self.user, on=constant.USER_ID, how='left').merge(self.item, on=constant.ITEM_ID, how='left')
 
@@ -66,12 +68,17 @@ class Featuring(object):
         user2negsamples_df = user2negsamples_df.merge(neg_samples, on=[constant.USER_ID, constant.ITEM_ID], how='left')
 
         samples = user2negsamples_df.append(pos)
+
         return samples
 
     def samples(self):
         return self.neg_samples()
 
     def gbdt_lr_v1(self):
+        """
+        只做了采样， 没有划分数据集
+        :return:
+        """
         samples_df = self.samples()
         print(
             'neg sampling end. expect neg_pos rate:{}, sampled neg_pos rate:{}'.format(
@@ -81,6 +88,28 @@ class Featuring(object):
         )
 
         return samples_df[conf.baseline_features_columns + [constant.CLICK]].reset_index(drop=True)
+
+    def gbdt_lr_v2(self, samples_df=None):
+        """
+        采样之后，划分训练集和验证集
+        :return:
+        """
+        if samples_df is None:
+            samples_df = self.samples()
+
+        print(
+            'neg sampling end. expect neg_pos rate:{}, sampled neg_pos rate:{}'.format(
+                conf.neg_pos_rate,
+                np.sum(samples_df[constant.CLICK] == 0) // np.sum(samples_df[constant.CLICK] == 1)
+            )
+        )
+
+        if not self.train_valid_split:
+            return samples_df[conf.baseline_features_columns + [constant.CLICK]].reset_index(drop=True)
+        else:
+            train, valid = TrainValidTestSplit().train_valid_split_v0(samples_df)
+            return train[conf.baseline_features_columns + [constant.CLICK]].reset_index(drop=True), \
+                   valid[conf.baseline_features_columns + [constant.CLICK]].reset_index(drop=True)
 
     def random_sampling(self, df, random_num):
         df = df.reset_index(drop=True)

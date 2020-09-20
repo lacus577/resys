@@ -5,8 +5,7 @@ import pickle
 import numpy as np
 
 import conf, constant
-from utils import LabelTransf, Reading_data
-from data_precess.raw_format2dataframe import do_raw_format2dataframe_and_save_v1
+from utils import LabelTransf, Reading_data, PathProcess, data_prepare
 from evaluation.matching_evaluation import MatchingEvaluation
 
 def itemcf(action_df, matching_num):
@@ -20,16 +19,14 @@ def itemcf(action_df, matching_num):
         action_df[action_df[constant.CLICK] == 1][[constant.USER_ID, constant.ITEM_ID, constant.CLICK]].reset_index(drop=True)
     print('click aciton num:{}'.format(click_action_df.shape[0]))
 
-    if os.path.exists(os.path.join(conf.root_caching_path, conf.itemcf_sim_mat)):
-        sim_mat = pickle.load(
-            open(os.path.join(conf.root_caching_path, conf.itemcf_sim_mat), 'rb')
+    if PathProcess().is_file_exist(os.path.join(conf.root_caching_path, conf.itemcf_sim_mat)):
+        sim_mat = PathProcess().model_load(
+            os.path.join(conf.root_caching_path, conf.itemcf_sim_mat)
         )
     else:
         sim_mat = itemcf_training(training_data=click_action_df)
         # save
-        pickle.dump(sim_mat, open(
-            os.path.join(conf.root_caching_path, conf.itemcf_sim_mat), 'wb'
-        ))
+        PathProcess().model_save(sim_mat, os.path.join(conf.root_caching_path, conf.itemcf_sim_mat))
 
     return itemcf_inference(action_df, sim_mat, matching_num)
 
@@ -76,9 +73,9 @@ def itemcf_training(training_data):
     return sim_mat
 
 
-def itemcf_inference(action_df, sim_mat, matching_num):
+def itemcf_inference(action_df, sim_mat, matching_num, is_matching_clicked=False):
     """
-
+    is_matching_clicked=True允许召回历史点击过的item
     :param click_action_df:
     :param sim_mat:
     :param matching_num:
@@ -102,7 +99,8 @@ def itemcf_inference(action_df, sim_mat, matching_num):
 
             # top item相似集合
             for k, v in sorted(sim_mat[item].items(), key=lambda x: x[1], reverse=True)[: matching_num]:
-                if sim_mat[item].get(k) and k not in item_id_list:
+                # 不允许召回历史点击 并且 k不在历史点击里
+                if sim_mat[item].get(k) and (is_matching_clicked or k not in item_id_list):
                     # todo 非对称
                     near_item_score_dict[k] += sim_mat[item][k]
 
@@ -110,42 +108,35 @@ def itemcf_inference(action_df, sim_mat, matching_num):
 
     return matching_res
 
+
+def itemcf_train(action_df):
+    # 只保留点击行为
+    click_action_df = \
+        action_df[action_df[constant.CLICK] == 1][[constant.USER_ID, constant.ITEM_ID, constant.CLICK]].reset_index(
+            drop=True)
+    print('click aciton num:{}'.format(click_action_df.shape[0]))
+
+    if PathProcess().is_file_exist(os.path.join(conf.root_caching_path, conf.itemcf_sim_mat)):
+        sim_mat = PathProcess().model_load(
+            os.path.join(conf.root_caching_path, conf.itemcf_sim_mat)
+        )
+    else:
+        sim_mat = itemcf_training(training_data=click_action_df)
+        # save
+        PathProcess().model_save(sim_mat, os.path.join(conf.root_caching_path, conf.itemcf_sim_mat))
+
+    return sim_mat
+    # return itemcf_inference(action_df, sim_mat, matching_num)
+
 def do_itemcf():
-    if not os.path.exists(conf.train_action_path):
-        do_raw_format2dataframe_and_save_v1(
-            conf.raw_train_common_features_path,
-            conf.raw_train_sample_skeleton_path,
-            conf.raw_train_sampled_common_features_path,
-            conf.raw_train_sampled_skeleton_path,
-            conf.train_item_path, conf.train_user_path, conf.train_action_path
-        )
-    train_action_df = Reading_data().reading_action_data(conf.train_action_path)
-    pred = itemcf(train_action_df, conf.itemcf_matching_num)
+    train_action_df, _, _, \
+    test_action_df, _, _ = data_prepare()
 
-
-    if not os.path.exists(conf.test_action_path):
-        do_raw_format2dataframe_and_save_v1(
-            conf.raw_test_common_features_path,
-            conf.raw_test_sample_skeleton_path,
-            conf.raw_test_sampled_common_features_path,
-            conf.raw_test_sampled_skeleton_path,
-            conf.test_item_path, conf.test_user_path, conf.test_action_path
-        )
-    test_action_df = Reading_data().reading_action_data(conf.test_action_path)
-
-    pred = LabelTransf().label_transf_v1(pred)
-    truth = LabelTransf().label_transf_v2(test_action_df)
-    print('itemcf recall@k:', MatchingEvaluation(truth, pred).topk_recall())
-
-
-def do_itemcf_v1(train_action_df, test_action_df):
     pred = itemcf(train_action_df, conf.itemcf_matching_num)
 
     pred = LabelTransf().label_transf_v1(pred)
     truth = LabelTransf().label_transf_v2(test_action_df)
     print('itemcf recall@k:', MatchingEvaluation(truth, pred).topk_recall())
-
-    return pred
 
 
 # todo baseline recall:

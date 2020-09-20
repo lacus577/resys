@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 import conf, constant
-from data_precess.sample import data_sample
+from data_precess.sample import data_sample, data_sample_v1
 
 sample_skeleton_columns = ['SampleID', 'click', 'buy', 'md5', 'feature_num', 'feature_list']
 common_features_columns = ['md5', 'feature_num', 'feature_list']
@@ -146,40 +146,40 @@ def raw_format2dataframe_v1(
     return sample_table
     # sample_table.to_csv(data_save_path, index=False)
 
-def do_raw_format2dataframe_and_save():
-    sample_skeleton_train_path = conf.raw_train_sampled_skeleton_path.format(str(conf.sampling_rate).split('.')[1])
-    common_features_train_path = conf.raw_train_sampled_common_features_path.format(str(conf.sampling_rate).split('.')[1])
-    if not os.path.exists(sample_skeleton_train_path) or not os.path.exists(common_features_train_path):
-        data_sample(
-            conf.raw_train_common_features_path, conf.raw_train_sample_skeleton_path,
-            conf.sampling_rate,
-            conf.raw_train_sampled_common_features_path, conf.raw_train_sampled_skeleton_path
-        )
-
-    raw_format2dataframe_and_save_v1(
-        sample_skeleton_train_path, sample_skeleton_columns, constant.skeletion_field_id2name,
-        conf.train_sample_skeleton_path)
-    raw_format2dataframe_and_save_v1(
-        common_features_train_path, common_features_columns, constant.common_features_field_id2name,
-        conf.train_common_features_path)
-
-    # 拆成user、item、action
-    sample_skeleton_df = pd.read_csv(conf.train_sample_skeleton_path)
-    common_features_df = pd.read_csv(conf.train_common_features_path)
-    total_df = sample_skeleton_df.merge(common_features_df, how='inner', on='md5')
-    item_df = total_df[constant.ITEM_COLUMNS].drop_duplicates(constant.ITEM_COLUMNS, keep='last')
-    user_df = total_df[constant.USER_COLUMS].drop_duplicates(constant.USER_COLUMS, keep='last')
-    action_df = total_df[constant.ACTION_COLUMNS].drop_duplicates(constant.ACTION_COLUMNS, keep='last')
-
-    # clean
-    action_df = action_df[~action_df[constant.USER_ID].isna()]
-    action_df = action_df[~action_df[constant.ITEM_ID].isna()]
-    item_df = item_df[~item_df[constant.ITEM_ID].isna()]
-    user_df = user_df[~user_df[constant.USER_ID].isna()]
-
-    item_df.to_csv(conf.train_item_path, index=False)
-    user_df.to_csv(conf.train_user_path, index=False)
-    action_df.to_csv(conf.train_action_path, index=False)
+# def do_raw_format2dataframe_and_save():
+#     sample_skeleton_train_path = conf.raw_train_sampled_skeleton_path.format(str(conf.sampling_rate).split('.')[1])
+#     common_features_train_path = conf.raw_train_sampled_common_features_path.format(str(conf.sampling_rate).split('.')[1])
+#     if not os.path.exists(sample_skeleton_train_path) or not os.path.exists(common_features_train_path):
+#         data_sample(
+#             conf.raw_train_common_features_path, conf.raw_train_sample_skeleton_path,
+#             conf.sampling_rate,
+#             conf.raw_train_sampled_common_features_path, conf.raw_train_sampled_skeleton_path
+#         )
+#
+#     raw_format2dataframe_and_save_v1(
+#         sample_skeleton_train_path, sample_skeleton_columns, constant.skeletion_field_id2name,
+#         conf.train_sample_skeleton_path)
+#     raw_format2dataframe_and_save_v1(
+#         common_features_train_path, common_features_columns, constant.common_features_field_id2name,
+#         conf.train_common_features_path)
+#
+#     # 拆成user、item、action
+#     sample_skeleton_df = pd.read_csv(conf.train_sample_skeleton_path)
+#     common_features_df = pd.read_csv(conf.train_common_features_path)
+#     total_df = sample_skeleton_df.merge(common_features_df, how='inner', on='md5')
+#     item_df = total_df[constant.ITEM_COLUMNS].drop_duplicates(constant.ITEM_COLUMNS, keep='last')
+#     user_df = total_df[constant.USER_COLUMS].drop_duplicates(constant.USER_COLUMS, keep='last')
+#     action_df = total_df[constant.ACTION_COLUMNS].drop_duplicates(constant.ACTION_COLUMNS, keep='last')
+#
+#     # clean
+#     action_df = action_df[~action_df[constant.USER_ID].isna()]
+#     action_df = action_df[~action_df[constant.ITEM_ID].isna()]
+#     item_df = item_df[~item_df[constant.ITEM_ID].isna()]
+#     user_df = user_df[~user_df[constant.USER_ID].isna()]
+#
+#     item_df.to_csv(conf.train_item_path, index=False)
+#     user_df.to_csv(conf.train_user_path, index=False)
+#     action_df.to_csv(conf.train_action_path, index=False)
 
 def do_raw_format2dataframe_and_save_v1(
         raw_common_features_path,
@@ -189,7 +189,7 @@ def do_raw_format2dataframe_and_save_v1(
         item_path, user_path, action_path
 ):
     """
-
+    随机采样
     :param raw_common_features_path: 原始下载的common_features csv路径
     :param raw_sample_skeleton_path: 原始下载的sample_skeleton csv路径
     :param raw_sampled_common_features_path: 采样后的common_feature csv路径
@@ -203,6 +203,59 @@ def do_raw_format2dataframe_and_save_v1(
     common_features_path = raw_sampled_common_features_path.format(str(conf.sampling_rate).split('.')[1])
     if not os.path.exists(sample_skeleton_path) or not os.path.exists(common_features_path):
         data_sample(
+            raw_common_features_path, raw_sample_skeleton_path,
+            conf.sampling_rate,
+            raw_sampled_common_features_path, raw_sampled_skeleton_path
+        )
+
+    sample_skeleton_df = raw_format2dataframe_v1(
+        sample_skeleton_path, sample_skeleton_columns, constant.skeletion_field_id2name)
+    common_features_df = raw_format2dataframe_v1(
+        common_features_path, common_features_columns, constant.common_features_field_id2name)
+
+    # 拆成user、item、action
+    # sample_skeleton_df = pd.read_csv(conf.train_sample_skeleton_path)
+    # common_features_df = pd.read_csv(conf.train_common_features_path)
+
+    total_df = sample_skeleton_df.merge(common_features_df, how='inner', on='md5')
+    item_df = total_df[constant.ITEM_COLUMNS].drop_duplicates(constant.ITEM_COLUMNS, keep='last')
+    user_df = total_df[constant.USER_COLUMS].drop_duplicates(constant.USER_COLUMS, keep='last')
+    action_df = total_df[constant.ACTION_COLUMNS].drop_duplicates(constant.ACTION_COLUMNS, keep='last')
+
+    # clean
+    action_df = action_df[~action_df[constant.USER_ID].isna()]
+    action_df = action_df[~action_df[constant.ITEM_ID].isna()]
+    item_df = item_df[~item_df[constant.ITEM_ID].isna()]
+    user_df = user_df[~user_df[constant.USER_ID].isna()]
+
+    item_df.to_csv(item_path, index=False)
+    user_df.to_csv(user_path, index=False)
+    action_df.to_csv(action_path, index=False)
+
+def do_raw_format2dataframe_and_save_v2(
+        train_sampled_user_set,
+        raw_common_features_path,
+        raw_sample_skeleton_path,
+        raw_sampled_common_features_path,
+        raw_sampled_skeleton_path,
+        item_path, user_path, action_path
+):
+    """
+    用于测试集， 根据训练集随机采样的user来采样
+    :param raw_common_features_path: 原始下载的common_features csv路径
+    :param raw_sample_skeleton_path: 原始下载的sample_skeleton csv路径
+    :param raw_sampled_common_features_path: 采样后的common_feature csv路径
+    :param raw_sampled_skeleton_path: 采样后的sample_skeleton csv路径
+    :param item_path:
+    :param user_path:
+    :param action_path:
+    :return:
+    """
+    sample_skeleton_path = raw_sampled_skeleton_path.format(str(conf.sampling_rate).split('.')[1])
+    common_features_path = raw_sampled_common_features_path.format(str(conf.sampling_rate).split('.')[1])
+    if not os.path.exists(sample_skeleton_path) or not os.path.exists(common_features_path):
+        data_sample_v1(
+            train_sampled_user_set,
             raw_common_features_path, raw_sample_skeleton_path,
             conf.sampling_rate,
             raw_sampled_common_features_path, raw_sampled_skeleton_path
@@ -232,4 +285,4 @@ def do_raw_format2dataframe_and_save_v1(
     action_df.to_csv(action_path, index=False)
 
 if __name__ == '__main__':
-    do_raw_format2dataframe_and_save()
+    pass

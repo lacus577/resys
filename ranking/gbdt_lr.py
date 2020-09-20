@@ -1,3 +1,5 @@
+import os, time
+
 import pandas as pd
 import numpy as np
 import lightgbm as lgb
@@ -12,30 +14,47 @@ from tqdm import tqdm
 warnings.filterwarnings('ignore')
 
 import constant, conf
-from utils import Reading_data
+from utils import Reading_data, data_prepare, PathProcess
 from featuring.featuring import Featuring
 from utils import TrainValidTestSplit
 
 class GbdtLR(object):
-    def __init__(self, train, valid=None, test=None):
-        self.train = train
-        self.valid = valid
-        self.test = test
+    def __init__(self, train=None, valid=None, test=None, evl='auc'):
+        self.train = self.to_num(train)
+        self.valid = self.to_num(valid)
+        self.test = self.to_num(test)
+        self.evl = evl
         self.gbdt_model = None
         self.lr_model = None
 
+    def to_num(self, df):
+        if df is None: return None
+        return df[df.columns].apply(pd.to_numeric)
+
     def fit(self):
+        if PathProcess().is_file_exist(PathProcess().path_combine(conf.root_caching_path, conf.gbdt_model_save_file_name)) \
+                and PathProcess().is_file_exist(PathProcess().path_combine(conf.root_caching_path, conf.lr_model_save_file_name)):
+            self.gbdt_model = \
+                PathProcess().model_load(PathProcess().path_combine(conf.root_caching_path, conf.gbdt_model_save_file_name))
+            self.lr_model = \
+                PathProcess().model_load(PathProcess().path_combine(conf.root_caching_path, conf.lr_model_save_file_name))
+            return
+
         # 数据集
         train_x = self.train[set(self.train.columns).difference([constant.CLICK])]
-        train_y = self.train[constant.CLICK]
+        train_x = train_x.values
+        train_y = self.train[constant.CLICK].values
+
         valid_x = self.valid[set(self.valid.columns).difference([constant.CLICK])]
-        valid_y = self.valid[constant.CLICK]
+        valid_x = valid_x.values
+        valid_y = self.valid[constant.CLICK].values
 
         self.gbdt_model = self.gbdt_fit(train_x, train_y, valid_x, valid_y)
         self.lr_model = self.lr_fit(train_x, train_y)
 
     def gbdt_fit(self, train_x, train_y, valid_x, valid_y):
         print('开始训练gbdt..')
+        s_time = time.time() * 1000
         gbm = lgb.LGBMClassifier(objective='binary',
                                 # subsample=0.8,
                                 # min_child_weight=0.5,
@@ -46,11 +65,12 @@ class GbdtLR(object):
                                 n_estimators=10,
                                 )
 
-        gbm.fit(train_x.values, train_y.values,
-                eval_set=[(train_x.values, train_y.values), (valid_x.values, valid_y.values)],
+        gbm.fit(train_x, train_y,
+                eval_set=[(train_x, train_y), (valid_x, valid_y)],
                 eval_names=['train', 'val'],
-                eval_metric='auc'
+                eval_metric=self.evl
                 )
+        print('gbdt训练完毕... 训练集规模：{}，耗时：{}'.format(train_x.shape, time.time() * 1000 - s_time))
 
         return gbm
 
@@ -58,9 +78,10 @@ class GbdtLR(object):
         train_x = self.features_from_gbdt(train_x)
 
         print('开始训练lr...')
+        s_time = time.time() * 1000 # ms
         lr = LogisticRegression()
-        lr.fit(train_x.values, train_y.values)
-        print('lr训练完毕...')
+        lr.fit(train_x, train_y)
+        print('lr训练完毕... 训练集规模：{}，耗时：{}'.format(train_x.shape, time.time() * 1000 - s_time))
 
         return lr
 
@@ -92,45 +113,54 @@ class GbdtLR(object):
         return df_train_gbdt_feats
 
     def predict(self):
-        train_x = self.train[set(self.train.columns).difference([constant.CLICK])]
-        train_x = self.features_from_gbdt(train_x)
-        train_y = self.train[constant.CLICK]
+        if self.train is not None:
+            train_x = self.train[set(self.train.columns).difference([constant.CLICK])]
+            train_x = self.features_from_gbdt(train_x.values)
+            train_y = self.train[constant.CLICK]
 
-        valid_x = self.valid[set(self.valid.columns).difference([constant.CLICK])]
-        valid_x = self.features_from_gbdt(valid_x)
-        valid_y = self.valid[constant.CLICK]
+            train_pred_y = self.lr_model.predict_proba(train_x.values)[:, 1]
+            print('train set AUC:{}'.format(roc_auc_score(train_y.values, train_pred_y)))
 
+        if self.valid is not None:
+            valid_x = self.valid[set(self.valid.columns).difference([constant.CLICK])]
+            valid_x = self.features_from_gbdt(valid_x)
+            valid_y = self.valid[constant.CLICK]
+
+            valid_pred_y = self.lr_model.predict_proba(valid_x.values)[:, 1]
+            print('valid set AUC:{}'.format(roc_auc_score(valid_y.values, valid_pred_y)))
+
+        if self.test is None:
+            raise Exception('no test set')
         test_x = self.test[set(self.test.columns).difference([constant.CLICK])]
         test_x = self.features_from_gbdt(test_x)
         test_y = self.test[constant.CLICK]
 
-        train_pred_y = self.lr_model.predict_proba(train_x)[:, 1]
-        print('train set AUC:{}'.format(roc_auc_score(train_y, train_pred_y)))
+        test_pred_y = self.lr_model.predict_proba(test_x.values)[:, 1]
+        print('test set AUC:{}'.format(roc_auc_score(test_y.values, test_pred_y)))
 
-        valid_pred_y = self.lr_model.predict_proba(valid_x)[:, 1]
-        print('valid set AUC:{}'.format(roc_auc_score(valid_y, valid_pred_y)))
-
-        test_pred_y = self.lr_model.predict_proba(test_x)[:, 1]
-        print('test set AUC:{}'.format(roc_auc_score(test_y, test_pred_y)))
+        return test_pred_y
 
     def save_model(self, gbdt_path, lr_path):
-        pickle.dump(self.gbdt_model, open(gbdt_path, 'wb'))
-        pickle.dump(self.lr_model, open(lr_path, 'wb'))
+        PathProcess().model_save(self.gbdt_model, gbdt_path)
+        PathProcess().model_save(self.lr_model, lr_path)
+
+    def load_model(self, gbdt_model_path, lr_model_path):
+        self.gbdt_model = PathProcess().model_load(gbdt_model_path)
+        self.lr_model = PathProcess().model_load(lr_model_path)
 
 if __name__ == '__main__':
-    train_action_df = Reading_data().reading_action_data(conf.train_action_path)
-    train_user_df = Reading_data().reading_user_data(conf.train_user_path)
-    train_item_df = Reading_data().reading_item_data(conf.train_item_path)
-    test_action_df = Reading_data().reading_action_data(conf.test_action_path)
-    test_user_df = Reading_data().reading_user_data(conf.test_user_path)
-    test_item_df = Reading_data().reading_item_data(conf.test_item_path)
+    train_action_df, train_user_df, train_item_df, \
+    test_action_df, test_user_df, test_item_df = data_prepare()
 
     # featuring
     train = Featuring(train_action_df, train_user_df, train_item_df).gbdt_lr_v1()
     test = Featuring(test_action_df, test_user_df, test_item_df).gbdt_lr_v1()
-    valid, test = TrainValidTestSplit().valid_test_split_timeseq(test.sample(frac=1).reset_index(drop=True), 0.2)
+    valid, test = TrainValidTestSplit().valid_test_split_v0(test.sample(frac=1).reset_index(drop=True), 0.2)
 
     gbdt_lr = GbdtLR(train, valid, test)
     gbdt_lr.fit()
-    gbdt_lr.save_model(conf.gbdt_model_save_path, conf.lr_model_save_path)
+    gbdt_lr.save_model(
+        os.path.join(conf.root_caching_path, conf.gbdt_model_save_file_name),
+        os.path.join(conf.root_caching_path, conf.lr_model_save_file_name)
+    )
     gbdt_lr.predict()

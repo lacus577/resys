@@ -7,11 +7,16 @@ FLOW_NUM = 100
 
 # 表头
 CLICK = 'click'
+CLICK_PRED = 'click_pred'
 USER_ID = 'UserID'
 ITEM_ID = 'ItemID'
-ITEM_COLUMNS = ['SampleID', 'ItemID', 'ItemCateID', 'ItemShopID', 'ItemIntentID', 'ItemBrandID']
-USER_COLUMS = ['SampleID', 'UserID', 'UserCateActions', 'UserShopActions', 'UserBrandActions', 'UserIntentActions', 'UserCate1', 'UserCate2', 'UserGender', 'UserAge', 'UserComsumptionLevel1', 'UserComsumptionLevel2', 'UserWorking', 'UserGeo']
+SAMPLE_ID = 'SampleID'
+ITEM_COLUMNS = ['ItemID', 'ItemCateID', 'ItemShopID', 'ItemIntentID', 'ItemBrandID']
+USER_COLUMS = ['UserID', 'UserCateActions', 'UserShopActions', 'UserBrandActions', 'UserIntentActions', 'UserCate1', 'UserCate2', 'UserGender', 'UserAge', 'UserComsumptionLevel1', 'UserComsumptionLevel2', 'UserWorking', 'UserGeo']
 ACTION_COLUMNS = ['SampleID', 'UserID', 'ItemID', 'ComposeCateAndActions', 'ComposeShopAndActions', 'ComposeBrandAndActions', 'ComposeIntentAndActions', 'SceneID', 'click', 'buy']
+
+# 可能存在多个值的列
+MULTI_VALUE_COLUMNS = ['ComposeIntentAndActions', 'ItemIntentID', 'UserCateActions', 'UserShopActions', 'UserBrandActions', 'UserIntentActions']
 
 # 原始数据id和名字对应
 field_id2name = {'205':'ItemID',
